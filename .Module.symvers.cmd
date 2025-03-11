@@ -1,1 +1,0 @@
-savedcmd_/home/nathan-dobbyn/audio_buffer/Module.symvers :=  scripts/mod/modpost -M -m -a      -o /home/nathan-dobbyn/audio_buffer/Module.symvers -T /home/nathan-dobbyn/audio_buffer/modules.order -i Module.symvers -e 
