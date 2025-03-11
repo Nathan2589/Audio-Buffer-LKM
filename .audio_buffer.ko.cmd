@@ -1,0 +1,1 @@
+savedcmd_/home/nathan-dobbyn/audio_buffer/audio_buffer.ko := ld -r -m elf_x86_64 -z noexecstack --no-warn-rwx-segments --build-id=sha1  -T scripts/module.lds -o /home/nathan-dobbyn/audio_buffer/audio_buffer.ko /home/nathan-dobbyn/audio_buffer/audio_buffer.o /home/nathan-dobbyn/audio_buffer/audio_buffer.mod.o
