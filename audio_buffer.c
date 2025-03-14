@@ -128,6 +128,8 @@ static int __init audio_buffer_init(void)
         printk(KERN_ALERT "Audio Buffer: Failed to create device node\n");
         return PTR_ERR(audio_class);
     }
+
+    proc_init();  // Initialize the proc file
     
     printk(KERN_INFO "Audio Buffer: Device initialized successfully with major number %d\n", major_number);
     return 0;
@@ -135,6 +137,9 @@ static int __init audio_buffer_init(void)
 
 static void __exit audio_buffer_exit(void)
 {
+
+    proc_cleanup();
+    
     device_destroy(audio_class, MKDEV(major_number, 0));
     cdev_del(&audio_device->cdev);
     
