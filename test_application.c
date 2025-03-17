@@ -46,7 +46,16 @@ void *playback_thread(void *arg)
     snd_pcm_hw_params_set_format(pcm_handle, hw_params, FORMAT);
     snd_pcm_hw_params_set_channels(pcm_handle, hw_params, CHANNELS);
     unsigned int rate = SAMPLE_RATE;
-snd_pcm_hw_params_set_rate_near(pcm_handle, hw_params, &rate, 0);   
+    snd_pcm_hw_params_set_rate_near(pcm_handle, hw_params, &rate, 0);
+    
+    // Set a larger buffer size for the ALSA device to handle timing variations
+    snd_pcm_uframes_t buffer_size = BUFFER_SIZE / (CHANNELS * snd_pcm_format_width(FORMAT) / 8) * 4;  // 4 times the frame size
+    snd_pcm_hw_params_set_buffer_size_near(pcm_handle, hw_params, &buffer_size);
+    
+    // Also set a reasonable period size
+    snd_pcm_uframes_t period_size = BUFFER_SIZE / (CHANNELS * snd_pcm_format_width(FORMAT) / 8);
+    snd_pcm_hw_params_set_period_size_near(pcm_handle, hw_params, &period_size, 0);
+    
     snd_pcm_hw_params(pcm_handle, hw_params);
     
     // Calculate frames per buffer
@@ -57,21 +66,37 @@ snd_pcm_hw_params_set_rate_near(pcm_handle, hw_params, &rate, 0);
     while (1) {
         // Read from our device driver
         ssize_t bytes_read = read(driver_fd, buffer, BUFFER_SIZE);
-        
+
         if (bytes_read <= 0) {
             // No data available, wait a bit
             usleep(100000);  // 100ms
             continue;
         }
-        
+
         // Calculate number of frames read
         int frames_read = bytes_read / (CHANNELS * snd_pcm_format_width(FORMAT) / 8);
-        
+
         // Write to ALSA loopback
         ret = snd_pcm_writei(pcm_handle, buffer, frames_read);
         if (ret < 0) {
             fprintf(stderr, "Write error: %s\n", snd_strerror(ret));
-            snd_pcm_prepare(pcm_handle);
+            if (ret == -EPIPE) {  // "Broken pipe" error
+                // Handle underrun
+                fprintf(stderr, "Underrun occurred\n");
+                snd_pcm_prepare(pcm_handle);
+                // Retry the write operation
+                ret = snd_pcm_writei(pcm_handle, buffer, frames_read);
+                if (ret < 0) {
+                    fprintf(stderr, "Recovery failed: %s\n", snd_strerror(ret));
+                }
+            } else if (ret == -ESTRPIPE) {
+                // Handle suspended
+                while ((ret = snd_pcm_resume(pcm_handle)) == -EAGAIN)
+                    sleep(1);
+                if (ret < 0) {
+                    snd_pcm_prepare(pcm_handle);
+                }
+            }
         } else {
             printf("Played %d frames\n", ret);
         }
@@ -140,7 +165,7 @@ void *generator_thread(void *arg)
         printf("Generated and wrote %zd bytes of audio data\n", bytes_written);
         
         // Sleep a bit to avoid overwhelming the buffer
-        usleep(500000);  // 500ms
+        usleep(10000);  // 10ms
     }
     
     // Cleanup
@@ -174,3 +199,4 @@ int main()
     
     return EXIT_SUCCESS;
 }
+

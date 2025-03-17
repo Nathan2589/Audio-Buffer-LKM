@@ -8,6 +8,9 @@
 #include <linux/slab.h>
 #include <linux/wait.h>
 #include <linux/mutex.h>
+#include <linux/export.h>
+#include "proc_audio.h"
+#include "audio_buffer.h"
 
 #define DEVICE_NAME "audio_buffer"
 #define CLASS_NAME  "audio"
@@ -20,30 +23,19 @@ MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Your Name");
 MODULE_DESCRIPTION("Audio Buffer Kernel Module");
 
-// Audio buffer structure
-struct audio_buffer_dev {
-    unsigned char *buffer;         // Kernel buffer for audio data
-    size_t buffer_size;            // Size of the buffer
-    size_t read_pos;               // Current read position
-    size_t write_pos;              // Current write position
-    size_t data_size;              // Amount of data currently in buffer
-    bool is_playing;               // Flag to indicate if audio is playing
-    wait_queue_head_t read_queue;  // Queue for processes waiting to read
-    wait_queue_head_t write_queue; // Queue for processes waiting to write
-    struct mutex buffer_mutex;     // Mutex for buffer access
-    struct cdev cdev;              // Character device structure
-};
+
 
 static int major_number;
 static struct class *audio_class = NULL;
-static struct audio_buffer_dev *audio_device = NULL;
-
-// Function prototypes
+struct audio_buffer_dev *audio_device = NULL;
+EXPORT_SYMBOL(audio_device);
+// function prototypes
 static int device_open(struct inode *, struct file *);
 static int device_release(struct inode *, struct file *);
 static ssize_t device_read(struct file *, char *, size_t, loff_t *);
 static ssize_t device_write(struct file *, const char *, size_t, loff_t *);
-
+void proc_init(void);
+void proc_cleanup(void);
 static struct file_operations fops = {
     .open = device_open,
     .release = device_release,
@@ -58,7 +50,7 @@ static int __init audio_buffer_init(void)
     
     printk(KERN_INFO "Audio Buffer: Initializing the module\n");
     
-    // Allocate device numbers
+    // allocate device numbers
     result = alloc_chrdev_region(&dev, 0, 1, DEVICE_NAME);
     if (result < 0) {
         printk(KERN_ALERT "Audio Buffer: Failed to allocate device numbers\n");
@@ -66,7 +58,7 @@ static int __init audio_buffer_init(void)
     }
     major_number = MAJOR(dev);
     
-    // Create device class
+    // create device class
     audio_class = class_create(CLASS_NAME);
     if (IS_ERR(audio_class)) {
         unregister_chrdev_region(dev, 1);
@@ -74,7 +66,7 @@ static int __init audio_buffer_init(void)
         return PTR_ERR(audio_class);
     }
     
-    // Allocate the device structure
+    // allocate the device structure
     audio_device = kmalloc(sizeof(struct audio_buffer_dev), GFP_KERNEL);
     if (!audio_device) {
         class_destroy(audio_class);
@@ -83,7 +75,7 @@ static int __init audio_buffer_init(void)
         return -ENOMEM;
     }
     
-    // Initialize the device structure
+    // initialize the device structure
     audio_device->buffer = kmalloc(BUFFER_SIZE, GFP_KERNEL);
     if (!audio_device->buffer) {
         kfree(audio_device);
@@ -103,7 +95,7 @@ static int __init audio_buffer_init(void)
     init_waitqueue_head(&audio_device->write_queue);
     mutex_init(&audio_device->buffer_mutex);
     
-    // Initialize the character device
+    // initialize the character device
     cdev_init(&audio_device->cdev, &fops);
     audio_device->cdev.owner = THIS_MODULE;
     
