@@ -20,6 +20,12 @@ MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Your Name");
 MODULE_DESCRIPTION("Audio Buffer Kernel Module");
 
+// Define ioctl commands
+#define AUDIO_BUFFER_IOCTL_MAGIC 'a'
+#define AUDIO_BUFFER_IOCTL_RESET _IO(AUDIO_BUFFER_IOCTL_MAGIC, 0)
+#define AUDIO_BUFFER_IOCTL_GET_SIZE _IOR(AUDIO_BUFFER_IOCTL_MAGIC, 1, size_t)
+#define AUDIO_BUFFER_IOCTL_SET_SIZE _IOW(AUDIO_BUFFER_IOCTL_MAGIC, 2, size_t)
+
 // Audio buffer structure
 struct audio_buffer_dev {
     unsigned char *buffer;         // Kernel buffer for audio data
@@ -43,12 +49,14 @@ static int device_open(struct inode *, struct file *);
 static int device_release(struct inode *, struct file *);
 static ssize_t device_read(struct file *, char *, size_t, loff_t *);
 static ssize_t device_write(struct file *, const char *, size_t, loff_t *);
+static long device_ioctl(struct file *filep, unsigned int cmd, unsigned long arg);
 
 static struct file_operations fops = {
     .open = device_open,
     .release = device_release,
     .read = device_read,
     .write = device_write,
+    .unlocked_ioctl = device_ioctl,
 };
 
 static int __init audio_buffer_init(void)
@@ -309,6 +317,71 @@ static ssize_t device_write(struct file *filep, const char *buffer, size_t len, 
     printk(KERN_INFO "Audio Buffer: Wrote %zu bytes\n", bytes_to_copy);
     return bytes_to_copy;
 }
+
+static long device_ioctl(struct file *filep, unsigned int cmd, unsigned long arg)
+{
+    size_t new_size;
+    void *new_buffer;
+    int ret = 0;
+
+    switch(cmd){
+        case AUDIO_BUFFER_IOCTL_RESET:
+            //Resets the audio buffer
+            mutex_lock(&audio_device->buffer_mutex);
+            audio_device->read_pos=0;
+            audio_device->write_pos=0;
+            audio_device->data_size=0;
+            audio_device->is_playing=false;
+            mutex_unlock(&audio_device->buffer_mutex);
+            printk(KERN_INFO "Audio Buffer: Buffer reset\n");
+            break;
+        case AUDIO_BUFFER_IOCTL_GET_SIZE:
+            ret = copy_to_user((size_t __user *)arg, &audio_device->buffer_size, sizeof(size_t));
+            if(ret){
+                printk(KERN_ERR "Audio Buffer: failed to get buffer size");
+                return -EFAULT;
+            }
+            break;
+        case AUDIO_BUFFER_IOCTL_SET_SIZE:
+            //coppies the new buffer size to the user
+            ret = copy_to_user(&new_size, (size_t __user *)arg, sizeof(size_t));
+            if(ret){
+                printk(KERN_ERR "Audio Buffer: failed to set buffer size");
+                return -EFAULT;
+            }
+            //checks if its above the max buffer size
+            if(new_size == 0 || new_size > BUFFER_SIZE){
+                printk(KERN_ERR "Audio Buffer: new size cannot be 0 or greater than the buffer size.");
+                return -EINVAL;
+            }
+
+            new_buffer = kmalloc(new_size, GFP_KERNEL);
+            if(!new_buffer)
+            {
+                printk(KERN_ERR "Audio Buffer: Failed to allocate new buffer");
+                return -ENOMEM;
+            }
+
+            //Sets the buffer size and resets the audio_device
+            mutex_lock(&audio_device->buffer_mutex);
+            kfree(audio_device->buffer);
+            audio_device->buffer = new_buffer;
+            audio_device->buffer_size = new_size;
+            audio_device->read_pos = 0;
+            audio_device->write_pos = 0;
+            audio_device->data_size = 0;
+            audio_device->is_playing = false;
+            mutex_unlock(&audio_device->buffer_mutex);
+            printk(KERN_INFO "Audio Buffer: new size set to %zu\n", new_size);
+        
+            break;
+        default:
+            return -ENOTTY;
+        
+    }
+    return 0;
+}
+
 
 module_init(audio_buffer_init);
 module_exit(audio_buffer_exit);
