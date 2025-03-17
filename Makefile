@@ -1,4 +1,4 @@
-obj-m += audio_buffer.o audio_proc.c
+obj-m += audio_buffer.o proc_audio.c
 
 all:
 	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
