@@ -4,7 +4,6 @@
 #include <linux/timekeeping.h>
 #include <linux/mutex.h>
 #include "proc_audio.h"
-#include "audio_buffer.h"
 
 extern struct audio_buffer_dev *audio_device;  // Use the existing audio buffer
 
